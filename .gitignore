@@ -131,3 +131,5 @@ dmypy.json
 model_params/
 mpnn_max/
 out_*/
+test*/
+figures/
