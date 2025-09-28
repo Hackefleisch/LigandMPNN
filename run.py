@@ -673,8 +673,7 @@ def main(args) -> None:
                             )
                         )
 
-
-if __name__ == "__main__":
+def define_argparser():
     argparser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
@@ -985,6 +984,12 @@ if __name__ == "__main__":
         default=1,
         help="1-pack side chains using ligand context, 0 - do not use it.",
     )
+
+    return argparser
+
+if __name__ == "__main__":
+    
+    argparser = define_argparser()
 
     args = argparser.parse_args()
     main(args)
