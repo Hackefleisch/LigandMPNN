@@ -4,6 +4,8 @@ set -ex
 binder=$1
 model=$2
 
+seed=420
+
 name=dimer_trop2_human_binder_${binder}_model_${model}
 input_path=./${name}_in.json
 output_path=./out_$name
@@ -11,7 +13,7 @@ fix_res_file=./mpnn_max/interface/${name}_hotspots
 
 python run.py \
         --model_type "soluble_mpnn" \
-        --seed 420 \
+        --seed $seed \
         --pdb_path_multi "$input_path" \
         --out_folder "$output_path" \
         --save_stats 1 \
