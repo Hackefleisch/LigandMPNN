@@ -133,3 +133,5 @@ mpnn_max/
 out_*/
 test*/
 figures/
+production/
+*.tar.gz

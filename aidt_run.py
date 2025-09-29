@@ -27,7 +27,10 @@ def main(args):
     if input_directory[-1] != '/':
         input_directory += '/'
 
-    output_directory = args.out_path
+    if args.out_path == None:
+        output_directory = input_directory
+    else:
+        output_directory = args.out_path
     if output_directory[-1] != '/':
         output_directory += '/'
     if not os.path.exists(output_directory):
@@ -40,6 +43,8 @@ def main(args):
 
     surface_bias_value = args.surface_bias
     boundary_bias_value = args.boundary_bias
+
+    new_sequence_samples = args.new_sequence_samples
     
     # -------------------------------------------------------------------------
     # collect all pdb files
@@ -116,6 +121,7 @@ def main(args):
     chain_mask = torch.tensor(chain == design_chain)
 
     chain_pos = torch.cumsum(chain_mask.int(), dim=0)
+    chain_pos[~chain_mask] = 0
     interface_mask = torch.isin(chain_pos, interface_indices)
 
     residue_layers = torch.stack(residue_layers)
@@ -207,6 +213,12 @@ def main(args):
 
     AA = np.array(list('ACDEFGHIKLMNPQRSTVWYX'))
     wt_aa = data_list[0]['native_sequence']
+
+    binder_mean_probs = mean_probs[residue_layers != 0]
+    prob_file = output_directory + 'mean_probs_' + str(seed) + '.txt'
+    np.savetxt(prob_file, binder_mean_probs.numpy(), fmt='%1.4f')
+    print("Wrote probabilities to", prob_file)
+
     max_probs, max_prob_aa = torch.max(mean_probs, dim=1)
     static_aa = wt_aa.clone()
     static_aa[torch.logical_or(residue_layers == 1, torch.logical_or(residue_layers == 2, residue_layers == 3))] = 0
@@ -281,17 +293,48 @@ def main(args):
     print("Negative charges", str(neg_wt).rjust(8), str(neg_des).rjust(8), str(neg_des-neg_wt).rjust(5))
     print("Positive charges", str(pos_wt).rjust(8), str(pos_des).rjust(8), str(pos_des-pos_wt).rjust(5))
 
-    seq_file = output_directory + 'results.fa'
-    if not os.path.exists(seq_file):
-        with open(seq_file, 'w') as file:
-            file.write(">Native sequence\n")
-            file.write("".join(binder_wt_seq) + '\n')
-            print("Created", seq_file, 'with wildtype sequence')
-
-    print("Appending new sequence to", seq_file)
-    with open(seq_file, 'a') as file:
-        file.write(">Design " + str(seed) + "\n")
+    seq_file = output_directory + 'results_' + str(seed) + '.fa'
+    with open(seq_file, 'w') as file:
+        file.write(">Native sequence\n")
+        file.write("".join(binder_wt_seq) + '\n')
+        file.write(">Consensus Design " + str(seed) + "\n")
         file.write("".join(binder_design_seq) + '\n')
+        print("\nCreated", seq_file, 'with wildtype sequence and max sequence')
+
+    # -------------------------------------------------------------------------
+    # Generate more sequences
+    # -------------------------------------------------------------------------
+    # The consensus approach leads to almost identical sequences every run. To generate more we will simply go through each position and sample using the average probabilities
+    print("Size of binder probability matrix:", binder_mean_probs.size())
+    print("Generating", new_sequence_samples, "new random sequences based on consensus probabilities")
+
+    # find all zero rows due to exclusion from design
+    all_zero_mask = binder_mean_probs.sum(dim=1) == 0
+    binder_mean_probs[all_zero_mask, 0] = 1.0
+    results = torch.multinomial(binder_mean_probs, new_sequence_samples, replacement=True)
+    new_sequences = []
+    static_binder_aa = static_aa[residue_layers != 0]
+    for i in range(new_sequence_samples):
+        seq = results[:,i]
+        seq += static_binder_aa
+        seq = AA[seq]
+        new_sequences.append("".join(seq))
+        if i < 5:
+            print('\t' + new_sequences[-1])
+
+    print('\t...')
+    print("Writing sequences to fasta file", seq_file)
+    unique_seqs = set()
+    unique_seqs.add("".join(binder_wt_seq))
+    unique_seqs.add("".join(binder_design_seq))
+    with open(seq_file, 'a') as file:
+        for i, seq in enumerate(new_sequences):
+            if seq not in unique_seqs:
+                unique_seqs.add(seq)
+                file.write('>Sampled sequence ' + str(i+1) + '\n')
+                file.write(seq + '\n')
+    print("Generated", len(unique_seqs) - 1, "unique new sequences.")
+
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(
@@ -334,6 +377,14 @@ if __name__ == "__main__":
     )
 
     argparser.add_argument(
+        "--new_sequence_samples",
+        type=int,
+        help="Set how many sequences should be sampled from the consensus probabilities.",
+        default=60,
+        metavar='60'
+    )
+
+    argparser.add_argument(
         "--seed",
         type=int,
         help="Set seed for torch, numpy, and python random.",
@@ -351,8 +402,7 @@ if __name__ == "__main__":
     argparser.add_argument(
         "--out_path",
         type=str,
-        required=True,
-        help="Path to the output directory. Files with the same name will be overwritten",
+        help="Path to the output directory. Files with the same name will be overwritten. Defaults to in_path.",
         metavar='path/to/output_dir/'
     )
 
@@ -363,11 +413,5 @@ if __name__ == "__main__":
         help="Specify which chains to redesign, all others will be kept fixed, 'A,B,C,F'",
     )
 
-    # TODO: Remove default options
-    args = argparser.parse_args([
-        "--in_path", "test",
-        "--out_path", "test_out",
-        "--chains_to_design", "C",
-        #"--designs_per_input", "5"
-    ])
+    args = argparser.parse_args()
     main(args)
