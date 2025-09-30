@@ -348,8 +348,8 @@ if __name__ == "__main__":
         "--batch_size",
         type=int,
         help="Set batch size for GPU processing.",
-        default=20,
-        metavar='20'
+        default=40,
+        metavar='40'
     )
 
     argparser.add_argument(
