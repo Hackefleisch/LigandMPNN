@@ -135,3 +135,5 @@ test*/
 figures/
 production/
 *.tar.gz
+filtered_results/
+filtered_results_summary/
